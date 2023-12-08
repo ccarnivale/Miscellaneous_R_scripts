@@ -1,0 +1,123 @@
+---
+title: "First evidence of mixotrophy in known phototrophic haptophyte, Phaeocystis antarctica, and their interaction with known predator Ross Sea Dinoflagellate"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+##By: Chris Carnivale
+
+
+#Introduction (VERY rough intro that is)
+
+Ross Sea Dinoflagellate (RSD) is an undescribed dinoflagellate originally isolated in the Ross Sea of Antarctica. RSD is a kleptoplastidic mixotrophic phytoflagellate, which retains the chloroplasts of the algae it consumes. Most kleptoplastidic plankton can only retain the chloroplasts for days to weeks and need to continually feed to replenish their chloroplasts. RSD, however, can retain chloroplasts for their very specific prey, *Phaeocystis antarctica* for up to 6 months. It is known that RSD is planktivorous but it is unknown if it is also bacterivorous. Here, we test if RSD also consumes bacteria, while showing the first evidence that their plankton prey are also mixotrophic. Our null hypothesis: There is no difference of bacterial ingestion between light levels for Ross Sea Dinoflagellate. Any observes differences occur stochastically and due to chance.  There is no difference of bacterial ingestion between light levels for *Phaeocystis antarctica*. Any observes differences occur stochastically and due to chance. There is no difference of bacterial ingestion between 21 and 77 days for Ross Sea Dinoflagellate. Any observes differences occur stochastically and due to chance.  Any differences occur stochastically. There is no difference of bacterial ingestion between 21 and 77 days for *Phaeocystis antarctica*. Any observes differences occur stochastically and due to chance. Alpha is set at 0.05. 
+
+```{r setup, include=FALSE}
+library(magrittr)
+library(tidyverse)
+library(stringr)
+```
+
+#Methods (VERY rough intro that is)
+
+RSD cultures are maintained in fresh artificial seawater with additional f/2 nutrient rich media with its prey, phaeocystis. They cannot be grown and maintained alone for prolonged periods. In order to determine ingestion rates, RSD cultures were inoculated with 0.6 um flourescent microspheres at a concentration of 1 x 10^5. This concentration is aprroximately 10-20% of the bacterial standing stock concentration. RSD experimental cultures were exposed to 3 different light levels: dark, regular (1 x 10^15 quanta per m^2 per sec), and high (1 x 10^15 quanta per m^2 per sec). Feeding experiments were done at 2 different times; once after 21 days and again after 77 days with replicates. To analyze the data, 2 way anovas were performed for each species with "time" and "light level" as the two factors. 2-way anova was chosen to compare multiple means against 2 different factors. After a post-hoc analysis Tukey's HSD was used to determine which of the means were different from each other. Tukey's HSD was chosen as there are no clear "control" groups as we would like to compare all possible permutations of means. 
+
+#Results
+
+```{r downloads_tidy data}
+
+phaeo_rsd <- read.csv("RSD_Phaeo_counts_12_10_18.csv")
+
+phaeo_rsd_ing <- phaeo_rsd %>% 
+  mutate(bac_conc_perML = bac_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         micro_conc_perML = micro_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         BM_ratio = bac_conc_perML/micro_conc_perML,
+         BSP_ingested = (conc_bkgrd_per*BM_ratio) + conc_bkgrd_per,
+         ing_percell_perhour = BSP_ingested*3)
+
+phaeo_rsd_ing_1 <- phaeo_rsd_ing %>% 
+  group_by(species,treatment_time, treatment_light) %>% 
+  summarise(avg_ing = mean(ing_percell_perhour),
+            SD_ing = sd(ing_percell_perhour),
+            STE_ing = SD_ing/sqrt(3))
+
+phaeo_rsd_ing_2 <- filter(phaeo_rsd_ing_1, treatment_time == "Months" | treatment_time == "Weeks")
+
+phaeo_rsd_ing_3 <- filter(phaeo_rsd_ing_1, treatment_time == "Original")
+
+phaeo_rsd_ing_box_data <- filter(phaeo_rsd_ing, treatment_time == "Months" | treatment_time == "Weeks")
+
+new_time <- str_replace_all(phaeo_rsd_ing_box_data$treatment_time, c("Weeks" = "21 days", "Months" = "77 days"))
+
+phaeo_rsd_ing_box_data$treatment_time <- new_time
+
+phaeo_rsd_ing_orig_box_data <- filter(phaeo_rsd_ing, treatment_time == "Original")
+```
+
+```{r avg_error bar plotting data}
+#ggplot(phaeo_rsd_ing_1, aes(treatment_light, avg_ing))+
+#  geom_point()+
+#  geom_errorbar(aes(ymin = avg_ing - STE_ing, ymax = avg_ing + STE_ing))+
+#  facet_wrap(c("species", "treatment_time"))
+
+ggplot(phaeo_rsd_ing_2, aes(treatment_light, avg_ing))+
+  geom_point()+
+  geom_errorbar(aes(ymin = avg_ing - STE_ing, ymax = avg_ing + STE_ing))+
+  facet_wrap(c("species", "treatment_time"))+
+  labs(x = "Light Level", y = "Ingestions/cell*hour") + 
+  theme(axis.title.x = element_text(face = "bold", size = 20), axis.title.y = element_text(face = "bold", size = 18))
+
+#ggplot(phaeo_rsd_ing_3, aes(treatment_light, avg_ing))+
+#  geom_point()+
+#  geom_errorbar(aes(ymin = avg_ing - STE_ing, ymax = avg_ing + STE_ing))+
+#  facet_wrap(c("species", "treatment_time"))
+```
+
+```{r boxplot}
+
+phaeo_rsd_boxplot <- ggplot(phaeo_rsd_ing_box_data, aes(treatment_light, ing_percell_perhour))+
+  geom_boxplot()+
+  facet_wrap(c("species", "treatment_time")) +
+  labs(x = "Light Level", y = "Ingestions/cell*hour") + 
+  theme(axis.title.x = element_text(face = "bold", size = 20), axis.title.y = element_text(face = "bold", size = 18))
+
+phaeo_rsd_boxplot
+
+#ggplot(phaeo_rsd_ing_orig_box_data, aes(treatment_light, ing_percell_perhour))+
+  geom_boxplot()
+
+```
+
+```{r data analysis}
+
+#phaeo_rsd_2way <- aov(ing_percell_perhour ~treatment_light*treatment_time, phaeo_rsd_ing)
+
+#summary(phaeo_rsd_2way)
+
+#setup data for anova - need to divide into species groups
+phaeo_ing <- filter(phaeo_rsd_ing, species == "Phaeocystis antarctica", treatment_time == "Weeks"| treatment_time =="Months")
+
+phaeo_2way <- aov(ing_percell_perhour ~ treatment_light*treatment_time, phaeo_ing)
+
+summary(phaeo_2way)
+
+rsd_ing <- filter(phaeo_rsd_ing, species == "Ross Sea Dinoflagellate", treatment_time == "Weeks"| treatment_time =="Months")
+
+rsd_2way <- aov(ing_percell_perhour ~ treatment_light*treatment_time, rsd_ing)
+
+summary(rsd_2way)
+
+phaeo_tukey <- TukeyHSD(phaeo_2way, ordered = T)
+
+phaeo_tukey
+
+rsd_tukey <- TukeyHSD(rsd_2way, ordered = T)
+
+rsd_tukey
+```
+
+#Conclusions
+
+For both species, we reject the null hypothesis for the effect of light. However, light didn't effect each species equally. Results from Tukey's HSD for RSD, reveal that ingestion rates were significantly higher in regular light levels compared to both dark and high light levels. For *Phaeocystis antarctica*, ingestion was significantly lower in the dark than both the high and regular light levels. Suggesting that Phaeocystis feeds to aid in growth when in high and regular light levels. However, the Ross Sea Dinoflagellate feeds in the regular light condition, suggesting that in low light levels carbon from photosynthesis isn't enough and feeding is used to compliment. In the dark light levels, the lack of light may be causing the cells too much stress affecting their ability to feed and in high light levels the carbon from photosynthesis may be high enough they no longer need to feed. 
+
+For phaeocystis, we reject the null hypothesis for the effect of time Increased amount of time significantly increased the feeding rates of phaeocystis. Provided the knowledge these cultures were starved for nearly a year, suggests as Phaeocystis recovers in nutrient rich media so does its ingestion rates. For Ross Sea Dinoflagellate, we fail to reject the null hypothesis and see no significant effect of time.

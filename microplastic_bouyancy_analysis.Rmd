@@ -1,0 +1,1250 @@
+---
+title: "Microplastic Bouyancy"
+author: "Chris Carnivale"
+date: "3/3/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(lme4)
+library(ggplot2)
+library(ggeffects)
+library(performance)
+library(gridExtra)
+#library(see)
+```
+
+#*Introduction*
+
+##Experimental Design (for Reference)
+
+This experiment is essentially designed in 2 parts: before and after T1. All the samples for T0 were taken from 1 large container with culture. They were then split into smaller culture flasks (or whatever flasks were used), incubated with plastics, then shaken for 24 hours. After, the T1s were taken for both control and experimental (either nylon or acrylic) cultures. The cultures were then removed from the shaker and left still for the remainder of the experiment. T2 and T3 were taken 1 hour and 2 hours after being removed from the shaker, respecively.
+
+##Notes from Rachel Meeting
+create error structure between t1 t2 and t3 so that the covariance differ between
+t1 to t2 and t2 to t3.(If you want to treat as continuous)
+
+Time autoregression (repeated measures)
+
+Make Replicate and independent random variable for a mixed model
+
+could treat each colony as a independent measure (an organisms within a habitat)
+so as each measure within a treatment is more similar than across reps (i.e. each
+rep has its own variance)
+
+
+**Need to go through and redo all of this code and adding factors in the correct columns**
+
+###Code and Analysis
+
+**Reading initial files for data tidying**
+
+```{r read files, include= FALSE}
+nylon <- read.csv("microplastic_bouyancy_nylon.csv")
+
+acrylic <- read.csv("microplastic_bouyancy_liquidacrylic.csv")
+
+nylon_reform <- read.csv("microplastic_bouyancy_nylon_reformatted.csv")
+
+acrylic_reform <- read.csv("microplastic_bouyancy_liquidacrylic_reformatted.csv")
+
+#New data was added from redoing the first 24 hours of experiment...
+#Data was saved .xlxs sheet (5 tabs) and thus needs to be reformatted into 1 csv file
+#only nylon portion was repeated for the experiment...
+
+
+nylon_24hr <- read.csv("nylon_24hr.csv")
+
+nylon_24hr$Time <- str_replace(nylon_24hr$Time, "T24", "T1")
+#To remain consistent with the original dataset I converted T24 to T1
+```
+
+**Data wrangling and tidying for analysis**
+
+```{r data tidying for old data structure, include=FALSE}
+#THIS CHUNK IS NOT USED***********
+str(nylon)
+#View(nylon)
+#View(acrylic)
+n_distinct(nylon[,1])
+
+
+
+nylon_count <- vector("integer", ncol((nylon)))
+
+for(i in names(nylon)){
+  nylon_count[[i]] <- n_distinct(nylon[[i]],na.rm = T)
+}
+
+nylon_count <- nylon_count[36:70] #need to replace T3.5 nylon to 0 from 1
+
+acrylic_count <- vector("integer", ncol((acrylic)))
+
+for(i in names(acrylic)){
+  acrylic_count[[i]] <- n_distinct(acrylic[[i]],na.rm = T)
+}
+
+acrylic_count <- acrylic_count[36:70]
+#need to replace T2.4, T3.1-T3.3 and T3.5 control to 0s
+
+acrylic_count
+
+#THIS CHUNK IS NOT USED**************
+```
+
+Because of how the data was originally arraged, I reformatted the data to be more compatible with R coding and analysis. There are 4 rows: Treatment, Time, Rep, and Size (or the output)
+
+```{r dataset merge, include= FALSE}
+nylon_reform_T2_T3 <- filter(nylon_reform, Time == "T2"|Time == "T3")
+
+nylon_merge <- rbind(nylon_24hr,nylon_reform_T2_T3)
+```
+
+##Talk to andrew about this:
+Need to decide if I merge the data into 1 large dataset or create 2 separate datasets
+for the comparison. I'll do it now just to have and visualize for him bc the redo is
+not looking great.
+
+
+```{r reformatted data analysis, include= FALSE}
+#View(nylon_reform)
+
+nylon_reform_summary <- group_by(nylon_reform, Treatment, Time, Rep) %>% 
+  summarise(count = n_distinct(Size, na.rm = T), avg_size = mean(Size), total_size = sum(Size), count_2 = n())
+
+#No longer unsing ndistinct as described below
+
+nylon_reform_summary_avgRep <- summarise(nylon_reform_summary, avg_count = mean(count_2), SE_count = sd(count_2)/sqrt(5), avg_total_size = mean(total_size), SE_total_size = sd(total_size)/sqrt(5), avg_avg_size = mean(avg_size), SE_avg_size = sd(avg_size)/sqrt(5))
+
+ggplot(nylon_reform_summary_avgRep, aes(x = Time, y = avg_total_size, fill = Treatment))+
+  geom_col(    position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_total_size - SE_total_size, ymax = avg_total_size + SE_total_size), position = position_dodge())+
+  ylab("Total Area (um^2)")
+
+ggplot(nylon_reform_summary_avgRep, aes(x = Time, y = avg_avg_size, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_avg_size - SE_avg_size, ymax = avg_avg_size + SE_avg_size), position = position_dodge())+
+  ylab("Average Colony Size (um^2)")
+
+ggplot(nylon_reform_summary_avgRep, aes(x = Time, y = avg_count, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_count - SE_count, ymax = avg_count + SE_count), position = position_dodge())+
+  ylab("Number of Colonies")
+
+#View(nylon_reform_summary)
+
+#verification of n_dictinct and n()
+
+#nylon_reform_veri <- filter(nylon_reform, Treatment == "Nylon", Time == "T1", Rep == "A")
+
+#head(nylon_reform_veri)
+
+#View(unique(nylon_reform_veri$Size))
+
+#cbind(unique(nylon_reform_veri$Size),nylon_reform_veri$Size)
+
+
+```
+
+
+There was a discrepency in the number of observations, which in this case corresponds to # of colonies. Therefore, I verified which metric of counts to use. The comparison yields that 592.270 was repeated and I should use n() and NOT n_distinct for counts for number of colonies. Which is how I continue the rest of the analysis.
+
+```{r 24 hr redo visualizations, include= FALSE}
+#Now to compare the T0 and T1 from the redo experiment
+
+nylon_24hr_summary <- group_by(nylon_24hr, Treatment, Time, Rep) %>% 
+  summarise(count = n_distinct(Size, na.rm = T), avg_size = mean(Size), total_size = sum(Size), count_2 = n())
+
+nylon_reform_24hr_avgRep <- summarise(nylon_24hr_summary, avg_count = mean(count_2), SE_count = sd(count_2)/sqrt(5), avg_total_size = mean(total_size), SE_total_size = sd(total_size)/sqrt(5), avg_avg_size = mean(avg_size), SE_avg_size = sd(avg_size)/sqrt(5))
+
+ggplot(nylon_reform_24hr_avgRep, aes(x = Time, y = avg_total_size, fill = Treatment))+
+  geom_col(    position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_total_size - SE_total_size, ymax = avg_total_size + SE_total_size), position = position_dodge())+
+  ylab("Total Area (um^2)")
+
+ggplot(nylon_reform_24hr_avgRep, aes(x = Time, y = avg_avg_size, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_avg_size - SE_avg_size, ymax = avg_avg_size + SE_avg_size), position = position_dodge())+
+  ylab("Average Colony Size (um^2)")
+
+ggplot(nylon_reform_24hr_avgRep, aes(x = Time, y = avg_count, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_count - SE_count, ymax = avg_count + SE_count), position = position_dodge())+
+  ylab("Number of Colonies")
+```
+
+```{r merged data visualizations, include= FALSE}
+#Showing data with merged dataset
+nylon_merge_summary <- group_by(nylon_merge, Treatment, Time, Rep) %>% 
+  summarise(count = n_distinct(Size, na.rm = T), avg_size = mean(Size), total_size = sum(Size), count_2 = n())
+
+#No longer unsing ndistinct as described below
+
+nylon_reform_merge_avgRep <- summarise(nylon_merge_summary, avg_count = mean(count_2), SE_count = sd(count_2)/sqrt(5), avg_total_size = mean(total_size), SE_total_size = sd(total_size)/sqrt(5), avg_avg_size = mean(avg_size), SE_avg_size = sd(avg_size)/sqrt(5))
+
+ggplot(nylon_reform_merge_avgRep, aes(x = Time, y = avg_total_size, fill = Treatment))+
+  geom_col(    position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_total_size - SE_total_size, ymax = avg_total_size + SE_total_size), position = position_dodge())+
+  ylab("Total Area (um^2)")
+
+ggplot(nylon_reform_merge_avgRep, aes(x = Time, y = avg_avg_size, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_avg_size - SE_avg_size, ymax = avg_avg_size + SE_avg_size), position = position_dodge())+
+  ylab("Average Colony Size (um^2)")
+
+ggplot(nylon_reform_merge_avgRep, aes(x = Time, y = avg_count, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_count - SE_count, ymax = avg_count + SE_count), position = position_dodge())+
+  ylab("Number of Colonies")
+```
+
+
+
+
+Now I want to do an analysis of the averages and sums across the time point for all reps not grouped by Rep.
+
+```{r nylon data wrangling, include = FALSE}
+nylon_reform_summary_bytime <- group_by(nylon_reform, Treatment, Time) %>% 
+  summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+nylon_24hr_summary_bytime <- group_by(nylon_24hr, Treatment, Time) %>% 
+  summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+ggplot(nylon_reform_summary_bytime, aes(x = Time, y = number_of_colonies))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+
+ggplot(nylon_reform_summary_bytime, aes(x = Time, y = avg_size))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+
+ggplot(nylon_reform_summary_bytime, aes(x = Time, y = total_size))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+
+ggplot(nylon_reform_summary_bytime, aes(x = Time, y = total_size))+
+  geom_line(aes(group = Treatment,color = Treatment))
+
+ggplot(nylon_reform_summary, aes(x = Time, y = total_size, group = Treatment))+
+  geom_point(aes(color = Treatment))+
+  geom_smooth(method = "lm", aes(color = Treatment))
+```
+
+Now that I have some nice visualizations for your nylon data I will repeat this process with the acrylic data. **NOTE** *I will need a second set or copy of the T0 data with the treament name Nylon so that there is a direct comparison between the two and the plot looks correct.* **This step has been done**
+
+Bytime data is the total number of occurences or measurements per treatment group and not
+representative of responses of reps but the total across the Reps **NOT USABLE**
+
+```{r acrylic data wrangling, include = FALSE}
+
+acrylic_reform_summary <- group_by(acrylic_reform, Treatment, Time, Rep) %>% 
+  summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+acrylic_reform_summary_avgRep <- summarise(acrylic_reform_summary, avg_count = mean(number_of_colonies), SE_count = sd(number_of_colonies)/sqrt(5), avg_total_size = mean(total_size), SE_total_size = sd(total_size)/sqrt(5), avg_avg_size = mean(avg_size), SE_avg_size = sd(avg_size)/sqrt(5))
+
+acrylic_reform_summary_avgRep$Treatment <- as.factor(acrylic_reform_summary_avgRep$Treatment)
+
+acrylic_reform_summary_avgRep$Treatment <- factor(acrylic_reform_summary_avgRep$Treatment, levels = rev(levels(acrylic_reform_summary_avgRep$Treatment)))
+
+ggplot(acrylic_reform_summary_avgRep, aes(x = Time, y = avg_total_size, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_total_size - SE_total_size, ymax = avg_total_size + SE_total_size), position = position_dodge())+
+  ylab("Total Area (um^2)")
+
+
+ggplot(acrylic_reform_summary_avgRep, aes(x = Time, y = avg_avg_size), fill = reorder(desc(Treatment)))+
+  geom_col(aes(fill = Treatment), position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_avg_size - SE_avg_size, ymax = avg_avg_size + SE_avg_size, fill = Treatment), position = position_dodge())+
+  ylab("Average Colony Size (um^2)")
+
+ggplot(acrylic_reform_summary_avgRep, aes(x = Time, y = avg_count, fill = Treatment))+
+  geom_col(position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_count - SE_count, ymax = avg_count + SE_count), position = position_dodge())+
+  ylab("Number of Colonies")
+
+
+acrylic_reform_summary_bytime <- group_by(acrylic_reform, Treatment, Time) %>% 
+  summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+#ggplot(acrylic_reform_summary_bytime, aes(x = Time, y = number_of_colonies))+
+#  geom_col(aes(fill = Treatment), position = position_dodge())
+
+#ggplot(acrylic_reform_summary_bytime, aes(x = Time, y = avg_size))+
+#  geom_col(aes(fill = Treatment), position = position_dodge())
+
+#ggplot(acrylic_reform_summary_bytime, aes(x = Time, y = total_size))+
+#  geom_col(aes(fill = Treatment), position = position_dodge())
+
+
+
+#ggplot(acrylic_reform, aes(x = Time, y = Size))+
+#  geom_boxplot(aes(color = Treatment))
+#Box plots are useless for this data set
+```
+
+
+```{r acrylic rate calculation, include=FALSE}
+ggplot(acrylic_reform_summary_bytime, aes(x = Time, y = total_size, group = Treatment))+
+  geom_line(aes(color = Treatment))+
+  geom_smooth(method = "gam", formula = y ~ log(x), linetype = "dashed")
+
+ggplot(acrylic_reform_summary, aes(x = Time, y = total_size, group = Treatment))+
+  geom_point(aes(color = Treatment))+
+  geom_smooth(method = "gam", formula = y ~ log(x), linetype = "dashed")
+
+ggplot(acrylic_reform, aes(x = Time, y = Size))+
+  geom_point(aes(color = Treatment), position = position_dodge(width = 0.1))+
+  geom_smooth(method = lm, formula = y ~ exp(x), linetype = "dashed")
+```
+
+There seems to be some issues with the data currently. The T0 is kinda meaningless since there is only 1 T0 and its the same for both conditions since they were split afterwards. The T0 was also mixed while the rest wasn't so the comparison of true sinking is not the same from between T0 to T1 is from T1 to T2. Attempts at getting a rate failed Because of these flaws, I will do most of the following analysis by removing T0 for the Repeated measures ANOVA and rate calculations. 
+
+```{r Nylon without T0 analysis, warning=FALSE, include= FALSE}
+nylon_reform_noTO <- filter(nylon_reform, !Time == "T0")
+
+#head(nylon_reform_noTO) to make sure I filtered correctly
+
+nylon_reform_noTO_summary <- group_by(nylon_reform_noTO, Treatment, Time, Rep) %>% summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+nylon_reform_noTO_summary_bytime <- group_by(nylon_reform_noTO, Treatment, Time) %>% summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+#head(nylon_reform_noTO_summary)
+
+ggplot(nylon_reform_noTO_summary, aes(x = Time, y = total_size, group = Treatment))+
+  geom_point(aes(color = Treatment))+
+  geom_smooth(aes(color = Treatment))
+```
+
+Linear regressions of the points after T1 show no significant difference in rate loss and if anything the rate loss is higher in control.
+
+I am going to try a normalize the effect by subracting control to the corresponding experimental treatment value. Negative values indicate a loss in comparison to control. 0 indicates no effect. Positive values indicate an increase in relation to control.
+
+```{r Nylon No TO ANOVAs, include= FALSE}
+no_TO_rep_anova_nylon_time <- aov(total_size ~ Time + Error(Rep/Time), nylon_reform_noTO_summary)
+
+summary(no_TO_rep_anova_nylon_time)
+
+no_TO_rep_anova_nylon_treat <- aov(total_size ~ Treatment + Error(Rep/Treatment), nylon_reform_noTO_summary)
+
+summary(no_TO_rep_anova_nylon_treat)
+
+no_TO_rep_anova_nylon_timetreat <- aov(total_size ~ Time*Treatment + Error(Rep/Time*Treatment), nylon_reform_noTO_summary)
+
+summary(no_TO_rep_anova_nylon_timetreat)
+```
+
+As noted before, the calculation for getting rates failed or doesn't seem worth ascertaining. I can continue this if you would like me to and get an average rate drop from a linear regression analysis. Instead, to quantify the *size* of the effect I will use a simple subraction of the control values from the experimental. Interpretation of the data is the same as stated in the previous blurb. 
+
+```{r no TO Effect size for Nylon, include= FALSE}
+nylon_reform_noTO_control <- filter(nylon_reform_noTO_summary_bytime, Treatment == "Control") %>% rename(Control_avg_size = avg_size, Control_total_size = total_size, Control_number_of_colonies = number_of_colonies)
+
+nylon_reform_noTO_nylon <-  filter(nylon_reform_noTO_summary_bytime, Treatment == "Nylon") %>% rename(Nylon_avg_size = avg_size, Nylon_total_size = total_size, Nylon_number_of_colonies = number_of_colonies)
+
+nylon_reform_noTO_join <- full_join(nylon_reform_noTO_control,nylon_reform_noTO_nylon, by = "Time")
+
+nylon_reform_noTO_effect <- mutate(nylon_reform_noTO_join, Nylon_effect = Nylon_total_size - Control_total_size)
+
+nylon_reform_noTO_effect
+
+ggplot(nylon_reform_noTO_effect, aes(x = Time, y = Nylon_effect))+
+  geom_col(fill = "darkred")
+
+#Need to redo this for nylon and acrylic...the effect size is not an average effect across the reps but a summation of reps and thus not an accurate descriptor of what is going on. Plus it will allow for me to get Standard errors for each time point.
+
+nylon_reform_noT0_control_redo <- select(nylon_reform_summary, -count) %>% 
+  filter(!Time == "T0", Treatment == "Control") %>% rename(avg_size_control = avg_size, total_size_control = total_size, count_control = count_2)
+
+nylon_reform_noT0_nylon_redo <- select(nylon_reform_summary, -count) %>% 
+  filter(!Time == "T0", Treatment == "Nylon") %>% rename(avg_size_nylon = avg_size, total_size_nylon = total_size, count_nylon = count_2)
+
+nylon_reform_noT0_join <- full_join(nylon_reform_noT0_control_redo, nylon_reform_noT0_nylon_redo, by = c("Time", "Rep"))
+
+nylon_reform_noT0_effect_redo <- mutate(nylon_reform_noT0_join, Effect_avg_size = avg_size_nylon - avg_size_control, Effect_total_size = total_size_nylon - total_size_control, Effect_colony_number = count_nylon - count_control) %>% group_by(Time) %>% summarise(Nylon_Effect_avg_size = mean(Effect_avg_size), SE_avg_size = sd(Effect_avg_size)/sqrt(5),Nylon_Effect_total_size = mean(Effect_total_size), SE_total_size = sd(Effect_total_size)/sqrt(5), Nylon_Effect_colony_number = mean(Effect_colony_number), SE_colony_number = sd(Effect_colony_number)/sqrt(5))
+
+ggplot(nylon_reform_noT0_effect_redo, aes(x = Time, y = Nylon_Effect_total_size))+
+  geom_col(fill = "skyblue")+
+  geom_errorbar(aes(ymin = Nylon_Effect_total_size - SE_total_size, ymax = Nylon_Effect_total_size + SE_total_size))+
+  ylab("Total Area Loss (um^2)")
+
+nylon_reform_noT0_effect_redo
+```
+
+```{r acrylic without TO analysis, warning=FALSE, include=FALSE}
+acrylic_reform_noTO <- filter(acrylic_reform, !Time == "T0")
+
+#head(nylon_reform_noTO) to make sure I filtered correctly
+
+acrylic_reform_noTO_summary <- group_by(acrylic_reform_noTO, Treatment, Time, Rep) %>% summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+acrylic_reform_noTO_summary_bytime <- group_by(acrylic_reform_noTO, Treatment, Time) %>% summarise(avg_size = mean(Size), total_size = sum(Size), number_of_colonies = n())
+
+#head(nylon_reform_noTO_summary)
+
+ggplot(acrylic_reform_noTO_summary, aes(x = Time, y = total_size, group = Treatment))+
+  geom_point(aes(color = Treatment))+
+  geom_smooth(aes(color = Treatment))
+```
+
+```{r acrylic no TO ANOVAs, include=FALSE}
+no_TO_rep_anova_acrylic_time <- aov(total_size ~ Time + Error(Rep/Time), acrylic_reform_noTO_summary)
+
+summary(no_TO_rep_anova_acrylic_time)
+
+no_TO_rep_anova_acrylic_treat <- aov(total_size ~ Treatment + Error(Rep/Treatment), acrylic_reform_noTO_summary)
+
+summary(no_TO_rep_anova_acrylic_treat)
+
+no_TO_rep_anova_acrylic_timetreat <- aov(total_size ~ Time*Treatment + Error(Rep/Time*Treatment), acrylic_reform_noTO_summary)
+
+summary(no_TO_rep_anova_acrylic_timetreat)
+```
+
+In regards to the acrylic portion of the experiment, there only seems to be an effect of time. There was no significant effect from Treatment or the interaction between treatment and time. Essentially, in both experiments there is an effect of time but nylon also saw a significant effect of treatment. I will quantify the treatment effect of acrylic anyway if you like to show that as well. I just haven't calculated standards errors for either of these because I want to make sure this is what you would like before taking the time to do that.
+
+```{r no TO acrylic effect size, include=FALSE}
+acrylic_reform_noTO_control <- filter(acrylic_reform_noTO_summary_bytime, Treatment == "Control") %>% rename(Control_avg_size = avg_size, Control_total_size = total_size, Control_number_of_colonies = number_of_colonies)
+
+acrylic_reform_noTO_acrylic <-  filter(acrylic_reform_noTO_summary_bytime, Treatment == "Acrylic") %>% rename(Acrylic_avg_size = avg_size, Acrylic_total_size = total_size, Acrylic_number_of_colonies = number_of_colonies)
+
+acrylic_reform_noTO_join <- full_join(acrylic_reform_noTO_control,acrylic_reform_noTO_acrylic, by = "Time")
+
+acrylic_reform_noTO_effect <- mutate(acrylic_reform_noTO_join, Acrylic_effect = Acrylic_total_size - Control_total_size)
+
+acrylic_reform_noTO_effect
+
+ggplot(acrylic_reform_noTO_effect, aes(x = Time, y = Acrylic_effect))+
+  geom_col(fill = "darkorange")
+
+#Has to be redone for reasons mentioned previously
+
+acrylic_reform_noT0_control_redo <-  filter(acrylic_reform_noTO_summary,Treatment == "Control") %>% rename(avg_size_control = avg_size, total_size_control = total_size, count_control = number_of_colonies)
+
+acrylic_reform_noT0_acrylic_redo <- filter(acrylic_reform_noTO_summary,Treatment == "Acrylic") %>% rename(avg_size_acrylic = avg_size, total_size_acrylic = total_size, count_acrylic = number_of_colonies)
+
+acrylic_reform_noT0_join <- full_join(acrylic_reform_noT0_control_redo, acrylic_reform_noT0_acrylic_redo, by = c("Time", "Rep"))
+
+acrylic_reform_noT0_effect_redo <- mutate(acrylic_reform_noT0_join, Effect_avg_size = avg_size_acrylic - avg_size_control, Effect_total_size = total_size_acrylic - total_size_control, Effect_colony_number = count_acrylic - count_control) %>% group_by(Time) %>% summarise(Acrylic_Effect_avg_size = mean(Effect_avg_size), SE_avg_size = sd(Effect_avg_size)/sqrt(5),Acrylic_Effect_total_size = mean(Effect_total_size), SE_total_size = sd(Effect_total_size)/sqrt(5), Acrylic_Effect_colony_number = mean(Effect_colony_number), SE_colony_number = sd(Effect_colony_number)/sqrt(5))
+
+ggplot(acrylic_reform_noT0_effect_redo, aes(x = Time, y = Acrylic_Effect_total_size))+
+  geom_col(fill = "skyblue")+
+  geom_errorbar(aes(ymin = Acrylic_Effect_total_size - SE_total_size, ymax = Acrylic_Effect_total_size + SE_total_size))+
+  ylab("Total Area Loss (um^2)")
+
+acrylic_reform_noT0_effect_redo
+```
+
+The analysis for T1 to T3 is fine. However, I need to perform a proper analysis for TO to T1. For this we will calculate error bars for the original data set. I will look into some kind of hypothesis testing, however, the TO is the same for both conditions so that really hinders the statistical analysis for comparison. To calculate the effect I will do something similar that I did for T1 - T3 effect size, except I will subract the T0 from Control T1 and Exp T1 for comparison.
+
+```{r TO effect size Nylon, include= FALSE}
+nylon_TO <- filter(nylon_reform_summary_bytime, Time == "T0") %>% 
+  rename(avg_size_T0 = avg_size, total_size_T0 = total_size, number_of_colonies_T0 = number_of_colonies)
+
+nylon_T1 <- filter(nylon_reform_summary_bytime, Time == "T1") %>% 
+  rename(avg_size_T1 = avg_size, total_size_T1 = total_size, number_of_colonies_T1 = number_of_colonies) 
+
+nylon_T0_join <- full_join(nylon_TO, nylon_T1, by = "Treatment")
+
+nylon_T0_effect <- mutate(nylon_T0_join, Nylon_effect_size = total_size_T1 - total_size_T0, hourly_rate = (total_size_T1 - total_size_T0)/24)
+
+ggplot(nylon_T0_effect, aes(x = Treatment, y = Nylon_effect_size))+
+  geom_col(aes(fill = Treatment))+
+  geom_col(aes(x = Treatment, y = hourly_rate), fill = "darkred", position = position_dodge())
+
+#I need to redo the effect analysis by accounting for each rep, which I didn't do during my initial data probing
+
+nylon_TO_T1 <- filter(nylon_reform_summary, Time == "T0"|Time == "T1")
+
+nylon_T0_T1_nylon <- filter(nylon_TO_T1, Treatment == "Nylon") 
+
+nylon_T0_T1_nylon$Key <- 1:10
+
+nylon_T0_T1_control <- filter(nylon_TO_T1, Treatment == "Control")
+
+nylon_T0_T1_control$Key <- 1:10
+
+nylon_T0_effect_redo <- full_join(nylon_T0_T1_control, nylon_T0_T1_nylon, by = "Key") %>% mutate(Nylon_Effect_count = count_2.y - count_2.x, Nylon_Effect_avg_size = avg_size.y - avg_size.x, Nylon_Effect_total_size = total_size.y - total_size.x)
+
+#This didn't get to where I wanted either...time for a different attempt to get the correct data structure I need for the analysis.
+
+nylon_TO_2 <- filter(nylon_reform_summary, Time == "T0") %>% rename(avg_size_T0 = avg_size, total_size_T0 = total_size, number_of_colonies_T0 = count_2)
+
+nylon_T1_2 <- filter(nylon_reform_summary, Time == "T1") %>% rename(avg_size_T1 = avg_size, total_size_T1 = total_size, number_of_colonies_T1 = count_2)
+
+nylon_T0_effect_byRep <- full_join(nylon_TO_2, nylon_T1_2, by = c("Treatment", "Rep")) %>% 
+  mutate(Nylon_Effect_count = number_of_colonies_T1 - number_of_colonies_T0, Nylon_Effect_avg_size = avg_size_T1 - avg_size_T0, Nylon_Effect_total_size = total_size_T1 - total_size_T0)
+
+nylon_T0_effect_redo_2 <- group_by(nylon_T0_effect_byRep, Treatment) %>% summarise(Nylon_Effect_count_avg = mean(Nylon_Effect_count), SE_count = sd(Nylon_Effect_count)/sqrt(5), Nylon_Effect_count_rate = mean(Nylon_Effect_count)/24, Nylon_Effect_total_size_avg = mean(Nylon_Effect_total_size), SE_total_size = sd(Nylon_Effect_total_size)/sqrt(5), Nylon_Effect_total_size_rate = mean(Nylon_Effect_total_size)/24, Nylon_Effect_avg_size_avg = mean(Nylon_Effect_avg_size), SE_avg_size = sd(Nylon_Effect_avg_size)/sqrt(5), Nylon_Effect_avg_size_rate = mean(Nylon_Effect_avg_size)/24)
+
+ggplot(nylon_T0_effect_redo_2, aes(x = Treatment, y = Nylon_Effect_total_size_avg))+
+  geom_col(aes(fill = Treatment))+
+  geom_errorbar(aes(ymin = Nylon_Effect_total_size_avg - SE_total_size, ymax = Nylon_Effect_total_size_avg + SE_total_size))+
+  ylab("Total Area loss (um^2)")
+
+#THIS WORKED
+```
+
+```{r TO effect size Acrylic, include= FALSE}
+acrylic_TO <- filter(acrylic_reform_summary_bytime, Time == "T0") %>% 
+  rename(avg_size_T0 = avg_size, total_size_T0 = total_size, number_of_colonies_T0 = number_of_colonies)
+
+acrylic_T1 <- filter(acrylic_reform_summary_bytime, Time == "T1") %>% 
+  rename(avg_size_T1 = avg_size, total_size_T1 = total_size, number_of_colonies_T1 = number_of_colonies) 
+
+acrylic_T0_join <- full_join(acrylic_TO, acrylic_T1, by = "Treatment")
+
+acrylic_T0_effect <- mutate(acrylic_T0_join, Acrylic_effect_size = total_size_T1 - total_size_T0, hourly_rate = (total_size_T1 - total_size_T0)/24)
+
+ggplot(acrylic_T0_effect, aes(x =desc(Treatment), y = Acrylic_effect_size))+
+  geom_col(aes(fill = Treatment))+
+  geom_col(aes(y = hourly_rate), fill = "darkred", position = position_dodge())+
+  scale_fill_manual(values = c("#00BFC4", "#F8766D"))
+
+#This is the proper analysis
+
+acrylic_TO_2 <- filter(acrylic_reform_summary, Time == "T0") %>% rename(avg_size_T0 = avg_size, total_size_T0 = total_size, number_of_colonies_T0 = number_of_colonies)
+
+acrylic_T1_2 <- filter(acrylic_reform_summary, Time == "T1") %>% rename(avg_size_T1 = avg_size, total_size_T1 = total_size, number_of_colonies_T1 = number_of_colonies)
+
+acrylic_T0_effect_byRep <- full_join(acrylic_TO_2, acrylic_T1_2, by = c("Treatment", "Rep")) %>% 
+  mutate(Acrylic_Effect_count = number_of_colonies_T1 - number_of_colonies_T0, Acrylic_Effect_avg_size = avg_size_T1 - avg_size_T0, Acrylic_Effect_total_size = total_size_T1 - total_size_T0)
+
+acrylic_T0_effect_redo <- group_by(acrylic_T0_effect_byRep, Treatment) %>% summarise(Acrylic_Effect_count_avg = mean(Acrylic_Effect_count), SE_count = sd(Acrylic_Effect_count)/sqrt(5), Acrylic_Effect_count_rate = mean(Acrylic_Effect_count)/24, Acrylic_Effect_total_size_avg = mean(Acrylic_Effect_total_size), SE_total_size = sd(Acrylic_Effect_total_size)/sqrt(5), Acrylic_Effect_total_size_rate = mean(Acrylic_Effect_total_size)/24, Acrylic_Effect_avg_size_avg = mean(Acrylic_Effect_avg_size), SE_avg_size = sd(Acrylic_Effect_avg_size)/sqrt(5), Acrylic_Effect_avg_size_rate = mean(Acrylic_Effect_avg_size)/24) 
+
+acrylic_T0_effect_redo$Treatment <- factor(acrylic_T0_effect_redo$Treatment, levels = rev(acrylic_T0_effect_redo$Treatment))
+
+ggplot(acrylic_T0_effect_redo, aes(x = Treatment, y = Acrylic_Effect_total_size_avg))+
+  geom_col(aes(fill = Treatment))+
+  geom_errorbar(aes(ymin = Acrylic_Effect_total_size_avg - SE_total_size, ymax = Acrylic_Effect_total_size_avg + SE_total_size))+
+  ylab("Total Area loss (um^2)")
+```
+
+```{r Acrylic pub ready table, include = FALSE, include= FALSE}
+acrylic_table_ratedata <- select(acrylic_T0_effect_redo,Treatment, Acrylic_Effect_total_size_rate, Acrylic_Effect_count_rate, Acrylic_Effect_avg_size_rate) %>% rename("Total Size Change Per Hour" = "Acrylic_Effect_total_size_rate", "Colony Number Change Per Hour" = "Acrylic_Effect_count_rate", "Avg Size Change Per Hour" = "Acrylic_Effect_avg_size_rate")
+
+acrylic_rate_table <- ggtexttable(acrylic_table_ratedata, rows = NULL, cols = colnames(acrylic_table_ratedata))
+
+acrylic_rate_table
+#ggsave("acrylci_rate_table.png", plot = acrylic_rate_table, width = 8, height = 4)
+```
+
+```{r Nylon pub ready table, include= FALSE}
+nylon_table_ratedata <- select(nylon_T0_effect_redo_2, Treatment, Nylon_Effect_total_size_rate, Nylon_Effect_count_rate, Nylon_Effect_avg_size_rate) %>% rename("Total Size Change Per Hour" = "Nylon_Effect_total_size_rate", "Colony Number Chagne Per Hour" = "Nylon_Effect_count_rate", "Avg Size Change Per Hour" = "Nylon_Effect_avg_size_rate")
+
+nylon_rate_table <- ggtexttable(nylon_table_ratedata, rows = NULL, cols = colnames(nylon_table_ratedata))
+
+nylon_rate_table
+
+#ggsave("nylon_rate_table.png", plot = nylon_rate_table, width = 8, height = 4)
+```
+
+#*Redone experiment*
+##Introduction
+Because there were changes to the sampling times and methods I wanted to rewrite the overall
+experimental process again for clarity to distinguish between the two experiments.
+
+###Experimental Design
+This experiment is essentially designed in 2 parts: before and after time "0" (pre and post experiment start). True replicates were applied for all conditions and sampling. They were then incubated with 3-4 different plastic polymers, then shaken for 24 hours. After initial sampling, samples were taken every 30 mins over a 4 hour period. colonies were then measure using image-j software. Calculated areas are then
+provided as area. Each row is a single colony.
+
+####Data Analysis steps
+Need to convert from area to biovolume using a standard scalar. Need lit review for these values.
+By using a mixed effects model we will use a form of hierarchical modeling that allows for each observation to be an input in the model. Number of REPS went from 5 to 3 changing some standard error calculations.
+
+##Notes from Rachel Meeting
+create error structure between t1 t2 and t3 so that the covariance differ between
+t1 to t2 and t2 to t3.(If you want to treat as continuous)
+
+Time autoregression (repeated measures)
+
+Make Replicate and independent random variable for a mixed model
+
+could treat each colony as a independent measure (an organisms within a habitat)
+so as each measure within a treatment is more similar than across reps (i.e. each
+rep has its own variance)
+
+will use mixed modelling
+
+```{r Second attempt data tidying, include= FALSE}
+post_24hr <- read.csv("/Users/christophercarnivale/Desktop/Dissertation_data/Andrew's_data/Prime_Post24H_Counts.csv")
+
+post_24hr <- post_24hr[,1:4]
+
+#This next will be added later during the downstream analysis if needed. rbinded to the post data.
+pre_24hr <- read.csv("/Users/christophercarnivale/Desktop/Dissertation_data/Andrew's_data/Initial_Pre24H_Counts.csv")
+
+summary(post_24hr)
+str(post_24hr)
+
+#Need to convert variables into factors
+post_24hr$Treatment <- factor(post_24hr$Treatment, levels = c("Control", "Acrylic", "Nylon", "Polyester"))
+post_24hr$Time <- as.factor(post_24hr$Time)
+post_24hr$Rep <- as.factor(post_24hr$Rep)
+
+
+#for both
+pre_24hr$Treatment <- factor(pre_24hr$Treatment, levels = c("Control", "Acrylic", "Nylon", "Polyester"))
+pre_24hr$Time <- as.factor(pre_24hr$Time)
+pre_24hr$Rep <- as.factor(pre_24hr$Rep)
+
+```
+
+```{r second attempt data wrangling, include= FALSE}
+post_24hr_summary_byRep <- group_by(post_24hr, Time, Treatment, Rep) %>% 
+  summarise(Number_of_colonies = n(), avg_colony_size = mean(Area), total_biomass = sum(Area))
+
+post_24hr_summary_bytreatment <-  summarise(post_24hr_summary_byRep, avg_Num_of_colonies = mean(Number_of_colonies), avg_colony_size_bytreatment = mean(avg_colony_size), avg_total_biomass = mean(total_biomass), SE_Num_of_colony = sd(Number_of_colonies)/sqrt(3), SE_colony_size_bytreatment = sd(avg_colony_size)/sqrt(3), SE_total_biomass = sd(total_biomass)/sqrt(3))
+
+```
+
+```{r second attempt visualizations, include= FALSE}
+#Colony Number
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = avg_Num_of_colonies))+
+  geom_col(aes(fill = Treatment), position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_Num_of_colonies-SE_Num_of_colony, ymax = avg_Num_of_colonies+SE_Num_of_colony, fill = Treatment), position = position_dodge())
+
+#Avg colony size
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = avg_colony_size_bytreatment))+
+  geom_col(aes(fill = Treatment), position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_colony_size_bytreatment-SE_colony_size_bytreatment, ymax = avg_colony_size_bytreatment+SE_colony_size_bytreatment, fill = Treatment), position = position_dodge())
+
+#Total biomass
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = avg_total_biomass))+
+  geom_col(aes(fill = Treatment), position = position_dodge())+
+  geom_errorbar(aes(ymin = avg_total_biomass-SE_total_biomass, ymax = avg_total_biomass+SE_total_biomass, fill = Treatment), position = position_dodge())
+
+#Narrowed plot to visualize what andrew mentioned during lab meeting about polyester and control
+ggplot(post_24hr_summary_bytreatment, aes(x = as.numeric(Time), y = avg_total_biomass))+
+  geom_line(aes(color = Treatment), size = 2)+
+  geom_errorbar(aes(ymin = avg_total_biomass-SE_total_biomass, ymax = avg_total_biomass+SE_total_biomass, color = Treatment), size = 2, alpha = 0.5)+
+  coord_cartesian(c(6,8))+
+  ylim(0,25000)
+#prebious was too dirty so I filtered the others out
+ggplot(filter(post_24hr_summary_bytreatment, Treatment == "Control" | Treatment == "Polyester"), aes(x = as.numeric(Time), y = avg_total_biomass))+
+  geom_line(aes(color = Treatment), size = 2)+
+  geom_errorbar(aes(ymin = avg_total_biomass-SE_total_biomass, ymax = avg_total_biomass+SE_total_biomass, color = Treatment), size = 2, alpha = 0.5)+
+  coord_cartesian(c(6,8))+
+  ylim(0,25000)
+#Scaling all of the values to be a percentage of their groups inital values
+#Tried this due to the difference in starting biomass of the groups
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = avg_total_biomass/avg_total_biomass[1:4]))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+#Similar but subtracting from initial biomass to see how much they lost compared to the starting point.
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = avg_total_biomass-avg_total_biomass[1:4]))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+
+#Linearized "biomass" data by taking log10() of the area
+ggplot(post_24hr_summary_bytreatment, aes(x = Time, y = log10(avg_total_biomass)))+
+  geom_col(aes(fill = Treatment), position = position_dodge())
+
+#Line plots for better visualization
+ggplot(post_24hr_summary_bytreatment, aes(x = as.numeric(as.character(Time)), y = log10(avg_total_biomass+1)))+
+  geom_line(aes(color = Treatment), size = 2)
+
+#attempt a scatter plot with best fit lines from models
+ggplot(post_24hr, aes(x = as.numeric(as.character(Time)), y = log10(Area+1)))+
+  geom_point(aes(color = Treatment))
+
+ggplot(post_24hr, aes(x = Time, y = log10(Area+1)))+
+  geom_boxplot(aes(fill = Treatment, color = Treatment), alpha = 0.5)
+
+```
+
+```{r second attempt Checking normality, include= FALSE}
+#HISTOGRAMS
+ggplot(filter(post_24hr, Time == "0"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "0.5"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "1"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "1.5"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "2"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "2.5"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "3"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "3.5"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+ggplot(filter(post_24hr, Time == "4"))+
+  geom_histogram(aes(Area, bins = 20))+
+  facet_wrap(Treatment~Time+Rep)
+
+#FREQPOLY or density plots
+#raw counts don't work
+ggplot(post_24hr)+
+  geom_freqpoly(aes(Area, color = Treatment), alpha = 0.5)+
+  facet_wrap(~Time)
+
+ggplot(post_24hr)+
+  geom_density(aes(Area, fill = Treatment), alpha = 0.5)+
+  facet_wrap(~Time)
+#attempteing this again with log transformation
+ggplot(post_24hr)+
+  geom_freqpoly(aes(log10(Area+1), color = Treatment))+
+  facet_wrap(~Time)
+
+ggplot(post_24hr)+
+  geom_density(aes(log10(Area+1), fill = Treatment), alpha = 0.5)+
+  facet_wrap(~Time)
+
+#in both plots the distributions have been adjusted to be near normal
+
+#ggplot(post_24hr)+
+#  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+#  facet_wrap(~Time+Treatment)
+#The previous plot doesn't work too many combinations to show
+ggplot(filter(post_24hr, Time == "0"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "0.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "1"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "1.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "2"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "2.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "3"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "3.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+ggplot(filter(post_24hr, Time == "4"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time)
+```
+
+
+```{r second attempt mixed effect models, include= FALSE}
+
+#need time to be a numeric again
+post_24hr$Time <- as.numeric(as.character(post_24hr$Time))
+#Intercept model
+buoyancy_glm <- lmer(log10(Area+1) ~ Time + Treatment + (1|Rep), data = post_24hr)
+
+#Slope and intercept model
+buoyancy_glm_slope_int <- lmer(log10(Area+1) ~ Time + Treatment + (1 + Time+ Treatment|Rep), data = post_24hr)
+
+
+#buoyancy_glm_log <- glmer(log(Area) ~ Treatment + (1|Rep), data = post_24hr)
+
+summary(buoyancy_glm)
+summary(buoyancy_glm_slope_int)
+
+#step(buoyancy_glm, direction = "both")
+
+
+```
+
+```{r plotting model results, include= FALSE}
+
+#extract coefficients and predicted data for plotting
+predict_int_model <- ggpredict(buoyancy_glm, terms = c("Time", "Treatment"))
+#plot intercept model
+ggplot()+
+  geom_line(data = predict_int_model, aes(x = x, y = predicted, color = group))+
+  geom_point(data = post_24hr, aes(Time, log10(Area), color = Treatment))
+
+#intercept and slope model using Time and Treatment as fixed effects
+predict_int_slope_model <-  ggpredict(buoyancy_glm_slope_int, terms = c("Time", "Treatment", "Rep"), type = "re")
+
+ggplot()+
+  geom_line(data = predict_int_slope_model, aes(x = x, y = predicted, color = group, linetype = facet))+
+  geom_point(data = post_24hr, aes(Time, log10(Area), color = Treatment))
+
+#predict_int_slope_model <- 
+
+ggplot()+
+  geom_line(data = predict_int_slope_model, aes(x = x, y = predicted, color = group))+
+  geom_point(data = post_24hr, aes(Time, log10(Area), color = Treatment))+
+  geom_line(data = predict_int_model, aes(x = x, y = predicted, color = group), linetype = 3)
+
+
+plot(predict_int_slope_model)
+```
+
+At some point do we still want to consider or calculate the rates of reduction.
+I do think that's encapsulated in the regression analysis but I'll check with 
+the lab.
+
+Andrew has now sent me a new dataset that I need to work with. There is a mix of counting techniques employed in the single datafram so I will need to learn how to work around that. 
+
+Data file is "statistics_share.csv"
+
+#IGNORE EVERYTHING BEFORE THIS
+##This has all the new data excluding the microplastic decay stuff.
+
+```{r All experimental runs}
+all_runs <- read.csv("Statistics_Share_final.csv")
+
+all_runs$Speed <- as.factor(all_runs$Speed)
+all_runs$Time <- factor(all_runs$Time, levels = c("Initial", "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4"))
+all_runs$Treatment <- as.factor(all_runs$Treatment)
+all_runs$Slide_reading_technique <- as.factor(all_runs$Slide_reading_technique)
+all_runs$Rep <- as.factor(all_runs$Rep)
+#following 2 lines have been relegated b/c I releveled in the factor() function which removed my issue with the releveling dropping values.
+#time_relevel <- c("Initial", "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4")
+#levels(all_runs$Time) <- c("Initial", "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4")
+
+
+#Need to calculate area per mL and colonies per mL....difficult because some are random 20 FOVs and some are half slides.
+
+#In order to do this I need to get an average value per rep and calculate from there.
+
+
+all_runs_grpd <- dplyr::group_by(all_runs, Speed, Treatment, Time, Rep, FOV)
+
+all_runs_grpd_perFOV <- summarise(all_runs_grpd, Total_Area = sum(Area), Avg_colony_size = mean(Area), Colony_number = n())
+
+all_runs_grpd_perRep <- summarise(all_runs_grpd_perFOV, Total_Area_Rep = sum(Total_Area), Avg_colony_size_Rep = mean(Avg_colony_size), Colony_number_Rep = sum(Colony_number))
+
+#Need a way to add Counting technique into the grouped dataframe...this worked!
+all_runs_grpd_wINFO <- group_by(all_runs, Speed, Treatment, Time, Slide_reading_technique, Rep, FOV)
+
+all_runs_grp_summarise_wINFO <- all_runs_grpd_wINFO %>% summarise(Total_Area = sum(Area)) %>% summarise(Total_Area_Rep = sum(Total_Area))
+
+#Adds slide counting technique back into dataset for calculation per mL
+all_runs_grpd_perRep$Slide_Reading_technique <- all_runs_grp_summarise_wINFO[,4]
+
+#last problem: Those with no colonies have a 1 associated with them as I counted the number of rows
+#Need to changed these values to 0 SO I use the which() to identify the rows and replace the value
+
+all_runs_grpd_perRep[which(all_runs_grpd_perRep$Total_Area_Rep == 0), 7] <- 0
+
+#662 is the corection factor at 200x magnification
+all_runs_grpd_perRep_calc <- mutate(all_runs_grpd_perRep, Total_Area_perML = ifelse(Slide_Reading_technique == "Half_slide", Total_Area_Rep * 2, Total_Area_Rep*662), Avg_colony_size_perML = ifelse(Slide_Reading_technique == "Half_slide", Avg_colony_size_Rep * 2, Avg_colony_size_Rep*662), Colony_number_perML = ifelse(Slide_Reading_technique == "Half_slide", Colony_number_Rep * 2, Colony_number_Rep*662))
+```
+
+I need to get clarification anyway to be sure. Do the half slide samples always only have 1 colony associated with it at any given time? Random 20 obviously has multiple per FOV but was this ever the case for half-slide counts?
+
+I also need clarification on the amount that was filtered. Think it could be 2 ml per? maybe 1 mL?
+Doesn't change much of anything for the analysis but would be more accurate.
+
+```{r Visualizing the multiple runs, include=FALSE}
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "100"))+
+  geom_boxplot(aes(x = Time, y = log10(Total_Area_perML+1), fill = Treatment))
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "100"))+
+  geom_boxplot(aes(x = Time, y = log10(Avg_colony_size_perML+1), fill = Treatment))
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "100"))+
+  geom_boxplot(aes(x = Time, y = log10(Colony_number_perML+1), fill = Treatment))
+
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "50"))+
+  geom_boxplot(aes(x = Time, y = log10(Total_Area_perML+1), fill = Treatment))
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "50"))+
+  geom_boxplot(aes(x = Time, y = log10(Avg_colony_size_perML+1), fill = Treatment))
+ggplot(filter(all_runs_grpd_perRep_calc, Speed == "50"))+
+  geom_boxplot(aes(x = Time, y = log10(Colony_number_perML+1), fill = Treatment))
+```
+
+```{r Running Linear Mixed Models, include= FALSE}
+all_runs_grpd_perRep_calc_100 <-  filter(all_runs_grpd_perRep_calc, Speed == "100")
+
+linear_model_100speed <- lm(log10(Total_Area_perML) ~ Time, data = all_runs_grpd_perRep_calc_100)
+
+summary(linear_model_100speed)
+
+gen_linear_model_100speed_colonynum <- lmer(log10(Colony_number_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100)
+
+summary(gen_linear_model_100speed_colonynum)
+
+gen_linear_model_100speed_TotalArea <- lmer(log10(Total_Area_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100)
+
+summary(gen_linear_model_100speed_TotalArea)
+
+gen_linear_model_100speed_AvgArea <- lmer(log10(Avg_colony_size_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100)
+
+summary(gen_linear_model_100speed_AvgArea)
+
+#Repeat this with 50% speed
+all_runs_grpd_perRep_calc_50 <-  filter(all_runs_grpd_perRep_calc, Speed == "50")
+
+gen_linear_model_50speed_colonynum <- lmer(log10(Colony_number_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100)
+
+summary(gen_linear_model_50speed_colonynum)
+
+gen_linear_model_50speed_TotalArea <- lmer(log10(Total_Area_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_50)
+
+summary(gen_linear_model_50speed_TotalArea)
+
+gen_linear_model_50speed_AvgArea <- lmer(log10(Avg_colony_size_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_50)
+
+summary(gen_linear_model_50speed_AvgArea)
+
+
+
+
+plot(gen_linear_model_100speed_TotalArea)
+```
+
+Okay, so when looking at the output of the model I noticed that there is a measured effect of "0" for the random effects. This struck me as odd or something was wrong in the input of the model because there is variation within the dataset between replicates. Upon doing some digging, this can be common and that there is nothing inherently wrong with the model. It's not that theres no measured amount of variance its that all of the variance can be explain by the residual term. Another way to think about it is, there is not enough additional subject level variation to warrant adding a random term to explain all the variation. Basically, this just highlights the need to remove the subject level term as it adds nothing but degrees of freedom and complicates the statistics for Andrew. I will check to see if this trend continues for all the models and switch to a GLM if it does. *NOTE* The trend **DOES** continue for all measured variables and both experiments. A MIXED model is NOT needed and will not be used for the rest of the analysis. 
+
+ALL models are run as Mixed models but the outputs are essentially equivalent to a linear model.
+
+```{r Running Linear Mixed Models without INITIAL Time point, include= FALSE}
+all_runs_grpd_perRep_calc_100_no_init <-  filter(all_runs_grpd_perRep_calc, Speed == "100", Time != "Initial")
+
+linear_model_100speed_no_init <- lm(log10(Total_Area_perML) ~ Time, data = all_runs_grpd_perRep_calc_100_no_init)
+
+summary(linear_model_100speed_no_init)
+
+gen_linear_model_100speed_colonynum_no_init <- lmer(log10(Colony_number_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100_no_init)
+
+summary(gen_linear_model_100speed_colonynum_no_init)
+
+gen_linear_model_100speed_TotalArea_no_init <- lmer(log10(Total_Area_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100_no_init)
+
+summary(gen_linear_model_100speed_TotalArea_no_init)
+
+gen_linear_model_100speed_AvgArea_no_init <- lmer(log10(Avg_colony_size_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100_no_init)
+
+summary(gen_linear_model_100speed_AvgArea_no_init)
+
+#Repeat this with 50% speed
+all_runs_grpd_perRep_calc_50_no_init <-  filter(all_runs_grpd_perRep_calc, Speed == "50", Time != "Initial")
+
+gen_linear_model_50speed_colonynum_no_init <- lmer(log10(Colony_number_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_100_no_init)
+
+summary(gen_linear_model_50speed_colonynum_no_init)
+
+gen_linear_model_50speed_TotalArea_no_init <- lmer(log10(Total_Area_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_50_no_init)
+
+summary(gen_linear_model_50speed_TotalArea_no_init)
+
+gen_linear_model_50speed_AvgArea_no_init <- lmer(log10(Avg_colony_size_perML+1) ~ Time * Treatment + (1|Rep), data = all_runs_grpd_perRep_calc_50_no_init)
+
+summary(gen_linear_model_50speed_AvgArea_no_init)
+
+```
+
+
+```{r Repeat everything for 0 Speed data (separate csv fie), include=FALSE}
+Speed0_run <- read.csv("Ctrl_Poly_No_Motion_Share.csv")
+#All samples were filtered with 2 ml, half slide, and normal concentration of microplastics
+#essentially means all values are for 1 ml...Halved because 2 ml filter but doubled cause on half slide is read.
+
+Speed0_run$Speed <- as.factor(Speed0_run$Speed)
+Speed0_run$Time <- factor(Speed0_run$Time, levels = c("Initial", "0", "0.5", "1", "1.5", "2", "2.5", "3", "3.5", "4"))
+Speed0_run$Treatment <- as.factor(Speed0_run$Treatment)
+Speed0_run$Rep <- as.factor(Speed0_run$Rep)
+
+Speed0_run_grpd <- group_by(Speed0_run, Speed, Treatment, Time, Rep)
+
+Speed0_run_grpd_calc <- summarise(Speed0_run_grpd, Total_Area_mL = sum(Area), Avg_colony_size_mL = mean(Area), number_of_colonies = n())
+#Need to remove those observations that actually have no colonies.
+
+Speed0_run_grpd_calc[which(Speed0_run_grpd_calc$Total_Area_mL == 0), 7] <- 0
+
+```
+
+```{r 0 speed visualizations, include=FALSE}
+ggplot(Speed0_run_grpd_calc)+
+  geom_boxplot(aes(x = Time, y = log10(Total_Area_mL), fill = Treatment))
+ggplot(Speed0_run_grpd_calc)+
+  geom_boxplot(aes(x = Time, y = log10(Avg_colony_size_mL), fill = Treatment))
+ggplot(Speed0_run_grpd_calc)+
+  geom_boxplot(aes(x = Time, y = log10(number_of_colonies), fill = Treatment))
+```
+
+```{r GLMM for 0 speed, include=FALSE}
+gen_linear_model_0speed_colonynum <- lmer(log10(number_of_colonies+1) ~ Time * Treatment + (1|Rep), data = Speed0_run_grpd_calc)
+
+summary(gen_linear_model_0speed_colonynum)
+
+gen_linear_model_0speed_TotalArea <- lmer(log10(Total_Area_mL+1) ~ Time * Treatment + (1|Rep), data = Speed0_run_grpd_calc)
+
+summary(gen_linear_model_0speed_TotalArea)
+
+gen_linear_model_0speed_AvgArea <- lmer(log10(Avg_colony_size_mL+1) ~ Time * Treatment + (1|Rep), data = Speed0_run_grpd_calc)
+
+summary(gen_linear_model_0speed_AvgArea)
+
+```
+
+Only 1 model found ANY form of impact of Rep on the dataset. Therefore I will redo all the models for all the experiments
+
+###Check_model() doesn't run because SjPlot dependencies need to be updated but we aren't using the GLMMs anymore anyway, so I won't waste my time...
+
+```{r linear models, include=FALSE}
+#100% speed
+lm_100speed_colonynum <- lm(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100)
+
+lm_100speed_colonynum_sum <- summary(lm_100speed_colonynum)
+
+#performance::check_model(lm_100speed_colonynum)
+
+lm_100speed_TotalArea <- lm(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100)
+
+lm_100speed_TotalArea_sum <- summary(lm_100speed_TotalArea)
+
+#check_model(lm_100speed_TotalArea)
+
+lm_100speed_AvgArea <- lm(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100)
+
+lm_100speed_AvgArea_sum <- summary(lm_100speed_AvgArea)
+
+#check_model(lm_100speed_AvgArea)
+
+#50% speed
+lm_50speed_colonynum <- lm(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50)
+
+lm_50speed_colonynum_sum <- summary(lm_50speed_colonynum)
+
+#check_model(lm_50speed_colonynum)
+
+lm_50speed_TotalArea <- lm(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50)
+
+lm_50speed_TotalArea_sum <- summary(lm_50speed_TotalArea)
+
+#check_model(lm_50speed_TotalArea)
+
+lm_50speed_AvgArea <- lm(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50)
+
+lm_50speed_AvgArea_sum <- summary(lm_50speed_AvgArea)
+
+#check_model(lm_50speed_AvgArea)
+
+#0% speed
+lm_0speed_colonynum <- lm(log10(number_of_colonies+1) ~ Time * Treatment, data = Speed0_run_grpd_calc)
+
+lm_0speed_colonynum_sum <- summary(lm_0speed_colonynum)
+
+#check_model(lm_0speed_colonynum)
+
+lm_0speed_TotalArea <- lm(log10(Total_Area_mL+1) ~ Time * Treatment, data = Speed0_run_grpd_calc)
+
+lm_0speed_TotalArea_sum <- summary(lm_0speed_TotalArea)
+
+#check_model(lm_0speed_colonynum)
+
+lm_0speed_AvgArea <- lm(log10(Avg_colony_size_mL+1) ~ Time * Treatment, data = Speed0_run_grpd_calc)
+
+lm_0speed_AvgArea_sum <- summary(lm_0speed_AvgArea)
+
+#check_model(lm_0speed_colonynum)
+
+pvalue_table <- as.data.frame(matrix(nrow = 12, ncol = 4))
+
+
+pvalue_table[1,] <- lm_100speed_colonynum_sum[["coefficients"]][11,]
+pvalue_table[2,] <- lm_100speed_colonynum_sum[["coefficients"]][12,]
+pvalue_table[3,] <- lm_100speed_TotalArea_sum[["coefficients"]][11,]
+pvalue_table[4,] <- lm_100speed_TotalArea_sum[["coefficients"]][12,]
+pvalue_table[5,] <- lm_100speed_AvgArea_sum[["coefficients"]][11,]
+pvalue_table[6,] <- lm_100speed_AvgArea_sum[["coefficients"]][11,]
+pvalue_table[7,] <- lm_50speed_colonynum_sum[["coefficients"]][11,]
+pvalue_table[8,] <- lm_50speed_TotalArea_sum[["coefficients"]][11,]
+pvalue_table[9,] <- lm_50speed_AvgArea_sum[["coefficients"]][11,]
+pvalue_table[10,] <- lm_0speed_colonynum_sum[["coefficients"]][11,]
+pvalue_table[11,] <- lm_0speed_TotalArea_sum[["coefficients"]][11,]
+pvalue_table[12,] <- lm_0speed_AvgArea_sum[["coefficients"]][11,]
+
+colnames(pvalue_table) <- colnames(lm_100speed_colonynum_sum[["coefficients"]])
+
+Experiment_names <- c("100% Speed","100% Speed","100% Speed","100% Speed","100% Speed","100% Speed","50% Speed","50% Speed","50% Speed","0% Speed","0% Speed","0% Speed")
+Polyester_concentration <- c("Polyester", "Polyester 100x","Polyester", "Polyester 100x","Polyester", "Polyester 100x","Polyester","Polyester","Polyester","Polyester","Polyester","Polyester")
+pvalue_table$Experiment <- Experiment_names
+pvalue_table$Plastic_concentration <- Polyester_concentration
+
+#This table is the p-values of only the Treatment levels and NOT their interations. Most of the significance comes from the interaction of time. I provide the printouts of the rest of the tables so you can directly reference them yourself.
+
+pvalue_table
+
+lm_100speed_colonynum_sum
+lm_100speed_TotalArea_sum
+lm_100speed_AvgArea_sum
+lm_50speed_colonynum_sum
+lm_50speed_TotalArea_sum
+lm_50speed_AvgArea_sum
+lm_0speed_colonynum_sum
+lm_0speed_TotalArea_sum
+lm_0speed_AvgArea_sum
+```
+
+```{r linear models without INITIAL time point, include=FALSE}
+#100% speed
+lm_100speed_colonynum_no_init <- lm(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_no_init)
+
+lm_100speed_colonynum_sum_no_init <- summary(lm_100speed_colonynum_no_init)
+
+#check_model(lm_100speed_colonynum_no_init)
+
+lm_100speed_TotalArea_no_init <- lm(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_no_init)
+
+lm_100speed_TotalArea_sum_no_init <- summary(lm_100speed_TotalArea_no_init)
+
+#check_model(lm_100speed_TotalArea_no_init)
+
+lm_100speed_AvgArea_no_init <- lm(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_no_init)
+
+lm_100speed_AvgArea_sum_no_init <- summary(lm_100speed_AvgArea_no_init)
+
+#check_model(lm_100speed_AvgArea_no_init)
+
+#50% speed
+lm_50speed_colonynum_no_init <- lm(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_no_init)
+
+lm_50speed_colonynum_sum_no_init <- summary(lm_50speed_colonynum_no_init)
+
+#check_model(lm_50speed_colonynum_no_init)
+
+lm_50speed_TotalArea_no_init <- lm(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_no_init)
+
+lm_50speed_TotalArea_sum_no_init <- summary(lm_50speed_TotalArea_no_init)
+
+#check_model(lm_50speed_TotalArea_no_init)
+
+lm_50speed_AvgArea_no_init <- lm(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_no_init)
+
+lm_50speed_AvgArea_sum_no_init <- summary(lm_50speed_AvgArea_no_init)
+
+#check_model(lm_50speed_AvgArea_no_init)
+
+lm_100speed_colonynum_sum_no_init
+lm_100speed_TotalArea_sum_no_init
+lm_100speed_AvgArea_sum_no_init
+lm_50speed_colonynum_sum_no_init
+lm_50speed_TotalArea_sum_no_init
+lm_50speed_AvgArea_sum_no_init
+```
+
+
+```{r First 24 hours of exp analysis, include=FALSE}
+#Need to filter for first 24 hours which are "Initial" and "0"
+all_runs_grpd_perRep_calc_100_24hrs <-  filter(all_runs_grpd_perRep_calc, Speed == "100", Time == "Initial" | Time == "0")
+
+all_runs_grpd_perRep_calc_50_24hrs <-  filter(all_runs_grpd_perRep_calc, Speed == "50", Time == "Initial" | Time == "0")
+
+#100% speed
+aov_24hr_100speed_colonynum <- aov(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_24hrs)
+
+summary(aov_24hr_100speed_colonynum)
+
+aov_24hr_100speed_TotalArea <- aov(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_24hrs)
+
+summary(aov_24hr_100speed_TotalArea)
+
+aov_24hr_100speed_AvgArea <- aov(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_100_24hrs)
+
+summary(aov_24hr_100speed_AvgArea)
+
+#50% speed
+
+aov_24hr_50speed_colonynum <- aov(log10(Colony_number_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_24hrs)
+
+summary(aov_24hr_50speed_colonynum)
+
+aov_24hr_50speed_TotalArea <- aov(log10(Total_Area_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_24hrs)
+
+summary(aov_24hr_50speed_TotalArea)
+
+aov_24hr_50speed_AvgArea <- aov(log10(Avg_colony_size_perML+1) ~ Time * Treatment, data = all_runs_grpd_perRep_calc_50_24hrs)
+
+summary(aov_24hr_50speed_AvgArea)
+```
+
+```{r Final set of ANOVAs for Andrews dissertation}
+all_runs_grpd_perRep_calc_Time0_4 <- filter(all_runs_grpd_perRep_calc, Time == "0" | Time == "4", Treatment == "Control" |Treatment == "Polyester")
+#str(all_runs_grpd_perRep_calc_Time0_4)
+#Log transform is the better route to go. Normalizes the data....
+#aov_all_speed_no24hr_TA <- aov(Total_Area_perML ~ Speed + Treatment, data = all_runs_grpd_perRep_calc_Time0_4)
+
+#summary(aov_all_speed_no24hr_TA)
+
+aov_all_speed_no24hr_TA_log <- aov(log10(Total_Area_perML+1) ~ Speed * Treatment, data = all_runs_grpd_perRep_calc_Time0_4)
+
+summary(aov_all_speed_no24hr_TA_log)
+
+TukeyHSD(aov_all_speed_no24hr_TA_log)
+
+aov_all_speed_no24hr_ACS_log <- aov(log10(Avg_colony_size_perML+1) ~ Speed * Treatment, data = all_runs_grpd_perRep_calc_Time0_4)
+
+summary(aov_all_speed_no24hr_ACS_log)
+
+TukeyHSD(aov_all_speed_no24hr_ACS_log)
+
+aov_all_speed_no24hr_CN_log <- aov(log10(Colony_number_perML+1) ~ Speed * Treatment, data = all_runs_grpd_perRep_calc_Time0_4)
+
+summary(aov_all_speed_no24hr_CN_log)
+
+TukeyHSD(aov_all_speed_no24hr_CN_log)
+```
+
+
+```{r Distribution plots, include=FALSE}
+ggplot(filter(all_runs, Time == "0"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "0.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "1"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "1.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "2"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "2.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "3"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "3.5"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "4"))+
+  geom_density(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+
+ggplot(filter(all_runs, Time == "0"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "0.5"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "1"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "1.5"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "2"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "2.5"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "3"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "3.5"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+ggplot(filter(all_runs, Time == "4"))+
+  geom_histogram(aes(log10(Area+1), fill = Rep), alpha = 0.5)+
+  facet_wrap(Treatment~Time+Speed)
+
+```
+

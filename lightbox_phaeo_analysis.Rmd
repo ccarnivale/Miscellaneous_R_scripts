@@ -1,0 +1,279 @@
+---
+title: "Phaeo_Lightbox_Exp"
+author: "Chris Carnivale"
+date: "1/12/2021"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggpubr)
+library(performance)
+library(see)
+library(ggplot2)
+```
+
+## Andrew Lightbox experiment
+
+4 different light cycles to emulate different seasons of the polar regions
+
+
+
+```{r reading in data, include=FALSE}
+lightbox_phaeo <- read.csv("/Users/christophercarnivale/Desktop/Dissertation_data/Andrew's_data/LightboxPantarctica_2.csv")
+
+LB_phaeo_colony <- read.csv("/Users/christophercarnivale/Desktop/Dissertation_data/Andrew's_data/LBData_Plus_Colony_2.csv")
+
+#some quick making factors
+
+lightbox_phaeo$treatment_time <- factor(lightbox_phaeo$treatment_time, levels = c("Initial", "14"))
+LB_phaeo_colony$treatment_time <- factor(LB_phaeo_colony$treatment_time, levels = c("Initial", "14"))
+```
+
+```{r bacterivory tidying/calc w/o colony, include=FALSE}
+lightbox_phaeo_ing <- lightbox_phaeo %>% 
+  mutate(bac_conc_perML = bac_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         micro_conc_perML = micro_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         cells_conc_perML = cell_avg/count_filtered*dil_factor*cor_factor_grid,
+         BM_ratio = bac_conc_perML/micro_conc_perML,
+         BSP_ingested = (conc_bkgrd_per*BM_ratio) + conc_bkgrd_per,
+         ing_percell_perhour = BSP_ingested*2)
+lightbox_phaeo_ing_bygroup <- lightbox_phaeo_ing %>%
+  group_by(treatment_time,treatment_light, treatment_nut) %>% 
+  summarise(avg_ing = mean(ing_percell_perhour), 
+            STD_ing = sd(ing_percell_perhour),
+            STDerr_ing = STD_ing/sqrt(3),
+            avg_cell_perML = mean(cells_conc_perML))
+```
+
+I need to double check and make sure that the bacteria slides were actually 2 ml
+filtered. That seems REALLY high to me without some kind of dilution. However,
+the trends should still shine through in the visualizations.
+
+```{r bacterivory tidying/calc w colony, include=FALSE}
+LB_phaeo_colony_ing <- LB_phaeo_colony %>% 
+  mutate(bac_conc_perML = bac_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         micro_conc_perML = micro_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         cells_conc_perML = cell_avg/count_filtered*dil_factor*cor_factor_grid,
+         BM_ratio = bac_conc_perML/micro_conc_perML,
+         BSP_ingested = (conc_bkgrd_per*BM_ratio) + conc_bkgrd_per,
+         ing_percell_perhour = BSP_ingested*2)
+
+LB_phaeo_colony_ing_bygrp <- LB_phaeo_colony_ing %>%
+  group_by(treatment_time,treatment_light, treatment_nut) %>% 
+  summarise(avg_ing = mean(ing_percell_perhour), 
+            STD_ing = sd(ing_percell_perhour),
+            STDerr_ing = STD_ing/sqrt(3),
+            avg_cell_perML = mean(cells_conc_perML))
+```
+
+
+```{r , include=FALSE}
+ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = ing_percell_perhour))+
+  geom_boxplot(aes(fill = treatment_nut))+
+                 ylim(0,10)+
+  facet_wrap(~treatment_light)
+
+ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = cells_conc_perML))+
+  geom_boxplot(aes(fill = treatment_nut))+
+  facet_wrap(~treatment_light)
+
+ggplot(LB_phaeo_colony_ing, aes(x = treatment_time, y = Colony_Area))+
+  geom_boxplot(aes(fill = treatment_nut))+
+  facet_wrap(~treatment_light)
+
+ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = cells_conc_perML))+
+  geom_point(aes(color = treatment_nut), position = position_dodge(0.5))+
+  facet_wrap(~treatment_light)
+
+ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = cells_conc_perML))+
+  geom_point(aes(color = treatment_nut))+
+  facet_wrap(~treatment_light)
+
+ggplot(LB_phaeo_colony_ing, aes(x = treatment_time, y = Colony_Area))+
+  geom_point(aes(color = treatment_nut))+
+  facet_wrap(~treatment_light)
+```
+
+Need to make all plots boxplots (DONE)
+
+Need to convert everything into total biomass - Average cell diameter is 6 um.
+Average area per cell is 3^2pi or 9 pi um.
+
+possibly calculate average growth rate or doubling time over the 2 week period?
+just something to compare growth between light levels and nutrient with regards
+to observed feeding behavior. MUCH better for statistical comparison than just 
+raw biomass numbers.
+
+```{r calculate biomass with conversion factor, include=FALSE}
+LB_phaeo_colony_ing_totBIO <- mutate(LB_phaeo_colony_ing,
+                                     Colony_cell_perML = Colony_Area/9/pi/2,
+                                     Total_cell_perML = Colony_cell_perML+cells_conc_perML)
+
+# 9 is radius squared and 2 is the volume of sample filtered in mL.
+
+totBIO_box <- ggplot(LB_phaeo_colony_ing_totBIO, aes(x = treatment_time, y = Total_cell_perML))+
+  geom_boxplot(aes(fill = treatment_nut))+
+  facet_wrap(~treatment_light)
+
+freeliving_box <- ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = ing_percell_perhour))+
+  geom_boxplot(aes(fill = treatment_nut))+
+                 ylim(0,10)+
+  facet_wrap(~treatment_light)
+
+totBIO_box
+freeliving_box
+
+quartile_table <- layer_data(totBIO_box)
+#Need to add an ID row so he knows which quartiles correspond to what sample.
+quartile_id_vector <- paste(LB_phaeo_colony_ing_totBIO$treatment_light, LB_phaeo_colony_ing_totBIO$treatment_time, LB_phaeo_colony_ing_totBIO$treatment_nut,sep = "_")
+#This ID will work if I use a unique() function, however the order is incorrect. Might be easier to create a grouped dataset that corresponds to the grouping order used in geom_boxplot.
+LB_phaeo_colony_ing_totBIO_grp <- group_by(LB_phaeo_colony_ing_totBIO,treatment_nut,treatment_light,treatment_time)
+
+quartile_id_vector1 <- paste(LB_phaeo_colony_ing_totBIO_grp$treatment_light, LB_phaeo_colony_ing_totBIO_grp$treatment_time, LB_phaeo_colony_ing_totBIO_grp$treatment_nut,sep = "_")
+unique(quartile_id_vector1)
+#Reordering dataset to get the correct id order
+LB_phaeo_colony_ing_totBIO_grp_reorder <- arrange(LB_phaeo_colony_ing_totBIO_grp, treatment_light)
+
+quartile_id_vector2 <- paste(LB_phaeo_colony_ing_totBIO_grp_reorder$treatment_light, LB_phaeo_colony_ing_totBIO_grp_reorder$treatment_time, LB_phaeo_colony_ing_totBIO_grp_reorder$treatment_nut,sep = "_")
+
+unique(quartile_id_vector2)
+
+quartile_table$ID <- unique(quartile_id_vector2)
+
+quartile_table[c(2:6,24)]
+#lower = 1st quartile, middle = 2nd quartile, upper  = 3rd quartile, min and max are the top and bottom of the whiskers
+
+quartile_table_ing <- layer_data(freeliving_box)
+
+quartile_table_ing$ID <- unique(quartile_id_vector2)
+
+quartile_table_ing[c(2:6,25)]
+
+quartile_table_freecells <- layer_data(ggplot(lightbox_phaeo_ing, aes(x = treatment_time, y = cells_conc_perML))+
+  geom_boxplot(aes(fill = treatment_nut))+
+  facet_wrap(~treatment_light))
+
+quartile_table_freecells$ID <- unique(quartile_id_vector2)
+
+quartile_table_freecells[c(2:6,25)]
+
+quartile_table_colonyArea <- layer_data(ggplot(LB_phaeo_colony_ing, aes(x = treatment_time, y = Colony_Area))+
+  geom_boxplot(aes(fill = treatment_nut))+
+  facet_wrap(~treatment_light))
+
+quartile_table_colonyArea$ID <- unique(quartile_id_vector2)
+
+quartile_table_colonyArea[c(2:6,24)]
+```
+
+```{r ANOVAs for Andrews dissertation, include=FALSE}
+LB_phaeo_colony_ing_totBIO_T14 <- filter(LB_phaeo_colony_ing_totBIO, treatment_time == "14")
+
+#full_nutrient_aov <- aov(ing_percell_perhour ~ treatment_light, filter(LB_phaeo_colony_ing_totBIO, treatment_nut == "100N"))
+
+#summary(full_nutrient_aov)
+
+#no_NP_aov <- aov(ing_percell_perhour ~ treatment_light, filter(LB_phaeo_colony_ing_totBIO, treatment_nut == "NP-"))
+
+#summary(no_NP_aov)
+
+#2-way ANOVA
+#full_TWOway_aov <- aov(ing_percell_perhour ~ treatment_light*treatment_nut, LB_phaeo_colony_ing_totBIO_T14)
+
+#summary(full_TWOway_aov)
+
+#TukeyHSD(full_TWOway_aov)
+
+#2-way ANOVA without 25 or 50% (This reduces the number of comparisons)
+no50_25_TWOway_aov <- aov(ing_percell_perhour ~ treatment_light*treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14, treatment_nut != "25" & treatment_nut != "50"))
+
+summary(no50_25_TWOway_aov)
+
+TukeyHSD(no50_25_TWOway_aov)
+
+#Checking normality
+shapiro.test(LB_phaeo_colony_ing_totBIO_T14$ing_percell_perhour)
+
+```
+
+As I suspected, there's too many comparisons for a TUKEYS test. Not enough power to distinguish with significance the means between groups, but the 2 way ANOVA shows signals that nutrients matter apparently.
+
+```{r One-way anova series for Publication, include=TRUE}
+LB_phaeo_colony_ing_totBIO_T14_no50_no_25 <- filter(LB_phaeo_colony_ing_totBIO_T14, treatment_nut != "25" & treatment_nut != "50")
+
+Light_ONEway_aov <- aov(ing_percell_perhour ~ treatment_light, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25, treatment_nut == "100N"))
+
+summary(Light_ONEway_aov)
+
+TukeyHSD(Light_ONEway_aov)
+
+#Series of Nutrient One way anovas
+Nut_allLight_ONEway_aov <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25, treatment_light == "24H"))
+
+Nut_dark_ONEway_aov <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25, treatment_light == "24Z"))
+
+Nut_14L_10Z_ONEway_aov <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25, treatment_light == "14L.10Z"))
+
+Nut_15H_7Z_ONEway_aov <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25, treatment_light == "15H.2L.7Z"))
+
+#Summaries of each
+summary(Nut_allLight_ONEway_aov)
+
+summary(Nut_dark_ONEway_aov)
+
+summary(Nut_14L_10Z_ONEway_aov)
+
+summary(Nut_15H_7Z_ONEway_aov)
+
+#testing model residuals for normality
+Nut_15H_7Z_ONEway_aov_resid <- resid(Nut_15H_7Z_ONEway_aov)
+
+qqnorm(Nut_15H_7Z_ONEway_aov_resid)
+
+plot(density(Nut_15H_7Z_ONEway_aov_resid))
+
+check_model(Nut_15H_7Z_ONEway_aov)
+
+check_model(Nut_allLight_ONEway_aov)
+check_model(Nut_dark_ONEway_aov)
+
+#The initial model are mostly normal...however I'm gonna normalize the data and test to see if it changes anything just incase jd asks for it.
+
+LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm <- LB_phaeo_colony_ing_totBIO_T14_no50_no_25
+
+LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm$ing_percell_perhour <- (LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm$ing_percell_perhour-mean(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm$ing_percell_perhour))/sd(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm$ing_percell_perhour)
+
+shapiro.test(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm$ing_percell_perhour)
+
+Light_ONEway_aov_norm <- aov(ing_percell_perhour ~ treatment_light, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm, treatment_nut == "100N"))
+
+summary(Light_ONEway_aov_norm)
+
+TukeyHSD(Light_ONEway_aov_norm)
+
+#Series of Nutrient One way anovas
+Nut_allLight_ONEway_aov_norm <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm, treatment_light == "24H"))
+
+Nut_dark_ONEway_aov_norm <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm, treatment_light == "24Z"))
+
+Nut_14L_10Z_ONEway_aov_norm <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm, treatment_light == "14L.10Z"))
+
+Nut_15H_7Z_ONEway_aov_norm <- aov(ing_percell_perhour ~ treatment_nut, filter(LB_phaeo_colony_ing_totBIO_T14_no50_no_25_norm, treatment_light == "15H.2L.7Z"))
+
+#Summaries of each
+summary(Nut_allLight_ONEway_aov_norm)
+
+summary(Nut_dark_ONEway_aov_norm)
+
+summary(Nut_14L_10Z_ONEway_aov_norm)
+
+summary(Nut_15H_7Z_ONEway_aov_norm)
+```
+
+
+

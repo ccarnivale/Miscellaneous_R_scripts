@@ -1,0 +1,130 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r setup}
+library(magrittr)
+library(tidyverse)
+library(stringr)
+library(knitr)
+
+```
+
+#Feeding analysis pipeline for Arctic Feeding and eventually P vs I curves
+
+```{r Data import and tidy}
+ing <- read.csv("Data_from_sarah/Arctic_counts_4_degrees_wDinobryon_redo.csv")
+
+ing <- rename(ing, "Light" = treatment_light, "Nutrient Percentage" = treatment_percent)
+
+ing_1 <- ing %>% 
+  mutate(bac_conc_perML = bac_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         micro_conc_perML = micro_avg/bac_micro_filtered*dil_factor*cor_factor_grid,
+         BM_ratio = bac_conc_perML/micro_conc_perML,
+         BSP_ingested = (conc_bkgrd_per*BM_ratio) + conc_bkgrd_per,
+         ing_percell_perhour = BSP_ingested*2)
+
+ing_2 <- ing_1 %>%
+  group_by(species,Light, `Nutrient Percentage`) %>% 
+  summarise(avg_ing = mean(ing_percell_perhour), 
+            STD_ing = sd(ing_percell_perhour),
+            STDerr_ing = STD_ing/sqrt(3))
+
+#Pedinella only feeding rates
+ing_ped <- filter(ing_1, strain == 2301)
+
+#Dinodryon only feeding rates
+
+ing_dino <- filter(ing_1, strain == 2290)
+
+```
+
+```{r Ped only visualization}
+mutate(ing_1, "Nutrient Percentage" = paste0(`Nutrient Percentage`, "%")) %>% filter(strain == 2301) %>% 
+ggplot(ing_1, mapping = aes(Light, ing_percell_perhour))+
+  geom_boxplot()+
+  facet_wrap("`Nutrient Percentage`")+ 
+  theme(axis.title = element_text(size = 15))+ 
+  xlab("Light Level")+
+  ylab("BSP Ingestions/cell*hr")
+
+ggplot(ing_2, aes(Light, avg_ing))+
+  geom_point()+
+  geom_errorbar(aes(ymin = avg_ing - STDerr_ing, ymax = avg_ing + STDerr_ing))+
+  facet_wrap("`Nutrient Percentage`")
+```
+
+```{r Ped only ANOVAs}
+ped_aov2way <- aov(ing_percell_perhour ~ Light*`Nutrient Percentage`,ing_ped)
+summary(ped_aov2way)
+
+ped_aov <- aov(ing_percell_perhour ~ Light,ing_ped)
+summary(ped_aov)
+
+ped_aov_nut <- aov(ing_percell_perhour ~ `Nutrient Percentage`, ing_ped)
+summary(ped_aov_nut)
+```
+
+```{r dino only visualization}
+mutate(ing_1, "Nutrient Percentage" = paste0(`Nutrient Percentage`, "%")) %>% filter(strain == 2290) %>% 
+ggplot(ing_1, mapping = aes(Light, ing_percell_perhour))+
+  geom_boxplot()+
+  facet_wrap("`Nutrient Percentage`")+ 
+  theme(axis.title = element_text(size = 15))+ 
+  xlab("Light Level")+
+  ylab("BSP Ingestions/cell*hr")
+
+```
+
+
+```{r dino only ANOVAs}
+dino_aov2way <- aov(ing_percell_perhour ~ Light*`Nutrient Percentage`,ing_dino)
+dino_2way_summary <- summary(dino_aov2way)
+
+dino_2way_summary
+
+dino_aov_light <- aov(ing_percell_perhour ~ Light,ing_dino)
+summary(dino_aov_light)
+
+
+dino_aov_nutr <- aov(ing_percell_perhour ~ `Nutrient Percentage`, ing_dino)
+summary(dino_aov_nutr)
+```
+
+```{r dino table summary}
+dino_2way_sum <- dino_2way_summary[[1]]
+
+options(knitr.kable.NA = '')
+
+kable(dino_2way_sum, digits = 4)
+```
+
+
+```{r visualization of all species}
+mutate(ing_1, "Nutrient Percentage" = paste0(`Nutrient Percentage`, "%")) %>%
+ggplot(aes(Light, ing_percell_perhour))+
+  geom_boxplot()+
+  facet_grid(species~`Nutrient Percentage`)+ 
+  xlab("Light Level")+
+  ylab("BSP Ingestions/cell*hr")
+
+ggsave("dino_ped_ing_plot.pdf")
+```
+
+```{r All species ANOVAs}
+ped_dino_aov2way <- aov(ing_percell_perhour ~ Light*`Nutrient Percentage`, ing_1)
+summary(ped_dino_aov2way)
+
+ped_dino_aov_light <- aov(ing_percell_perhour ~ Light, ing_1)
+summary(ped_dino_aov_light)
+
+ped_dino_aov_nutr <- aov(ing_percell_perhour ~ `Nutrient Percentage`, ing_1)
+summary(ped_dino_aov_nutr)
+
+```
+
+
